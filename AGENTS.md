@@ -1,0 +1,21 @@
+# REAL LIFE RPG
+
+- Projet REAL LIFE RPG, application sportive RPG locale.
+- Stack React, TypeScript, Vite, Tailwind et Dexie.
+- Interface intégralement en français.
+- Dark premium minimaliste, accents violets et or.
+- Ne jamais remplacer une fonctionnalité réelle par des données factices.
+- Préserver les données, la compatibilité du schéma et les fonctionnalités existantes.
+- Séparer logique métier, accès aux données et composants visuels.
+- Les semaines vont du lundi au dimanche en heure locale.
+- Économie d’XP centralisée et sans duplication.
+- Progression conçue pour durer plusieurs années.
+- Pas de service externe ni d’authentification.
+- Éviter les dépendances inutiles et les rapports longs.
+- Ne pas modifier les décisions fondamentales des étapes précédentes sans nécessité.
+- Exécuter uniquement les vérifications techniques essentielles.
+- Bureau : Tauri 2, une seule interface React, sans serveur en production.
+- Identité de production immuable : com.realliferpg.app ; conserver aussi useHttpsScheme=true, l’origine locale et le label main.
+- Les données Dexie appartiennent au profil système de l’utilisateur, jamais au dossier du binaire. Ne jamais supprimer ce profil lors d’une mise à jour.
+- Ajouter uniquement des migrations Dexie non destructives et maintenir l’import des anciens JSON. Attendre la réussite de l’export natif avant tout import.
+- Garder la configuration de développement com.realliferpg.app.dev séparée des distributions ; ne jamais la publier.

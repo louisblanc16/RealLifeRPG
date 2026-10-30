@@ -1,0 +1,18 @@
+import { useId } from 'react'
+import { Flame, Sparkles, Trophy } from 'lucide-react'
+import { AURAS } from '../../domain/discipline'
+import { useDiscipline } from '../../components/DisciplinePanel'
+import { Card } from '../../components/ui'
+
+export function CharacterAura() {
+  const streak = useDiscipline(), id = useId().replace(/:/g, '')
+  const stage = AURAS.indexOf(streak.aura)
+  return <Card className="character-aura"><div className="aura-copy"><span className="card-eyebrow"><Sparkles size={14} />VOTRE DISCIPLINE PREND FORME</span><h2>{streak.aura.name}</h2><p>L’aura reflète votre série actuelle. Votre niveau, votre titre et votre XP suivent leur propre progression.</p><div className="aura-facts"><span><Flame size={17} /><strong>{streak.current}</strong> jours consécutifs</span><span><Trophy size={17} />Record : <strong>{streak.best} jours</strong></span></div><div className="aura-milestones">{AURAS.map(aura => <span key={aura.min} className={`aura-label aura-label-${aura.color} ${aura.min === streak.aura.min ? 'aura-current' : ''}`} aria-current={aura.min === streak.aura.min ? 'step' : undefined}><i />{aura.min === 0 ? '0–4' : `${aura.min}+`}<strong>{aura.name}</strong></span>)}</div><p className="aura-next">{streak.nextAura ? `${streak.nextAura.min - streak.current} jours avant ${streak.nextAura.name}.` : 'Immortel · votre discipline continue de s’écrire.'}</p></div>
+    <div className={`aura-stage aura-stage-${stage}`} data-aura={streak.aura.color} role="img" aria-label={`Silhouette de personnage · ${streak.aura.name} · Discipline Streak de ${streak.current} jours`}><div className="aura-field" /><div className="aura-orbit" /><div className="aura-floor" />{[0,1,2,3,4,5].map(index => <i className={`aura-particle particle-${index}`} key={index} />)}
+      <svg className="hero-silhouette" viewBox="0 0 320 420" aria-hidden="true"><defs><linearGradient id={`${id}-body`} x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#293241" /><stop offset="0.5" stopColor="#131b27" /><stop offset="1" stopColor="#080e18" /></linearGradient><linearGradient id={`${id}-edge`} x1="0" x2="1"><stop stopColor="#8794a7" /><stop offset="0.5" stopColor="#526174" /><stop offset="1" stopColor="#9aa6b7" /></linearGradient></defs>
+        <g fill={`url(#${id}-body)`} stroke={`url(#${id}-edge)`} strokeWidth="1.4" strokeLinejoin="round"><path d="M139 70 Q139 45 160 43 Q181 45 181 70 L178 87 Q170 101 160 102 Q150 101 142 87Z" /><path d="M148 101 L148 115 L126 122 L112 137 L124 190 L133 221 L130 249 Q160 262 190 249 L187 221 L196 190 L208 137 L194 122 L172 115 L172 101 Q160 109 148 101Z" /><path d="M111 137 L96 155 L83 207 L78 249 L89 267 L100 254 L106 214 L122 177Z" /><path d="M209 137 L224 155 L237 207 L242 249 L231 267 L220 254 L214 214 L198 177Z" /><path d="M130 250 L124 295 L126 338 L119 375 L142 376 L153 337 L160 281 L167 337 L178 376 L201 375 L194 338 L196 295 L190 250 Q160 262 130 250Z" /><path d="M119 375 L113 388 Q126 396 144 389 L142 376Z M178 376 L176 389 Q194 396 207 388 L201 375Z" /></g>
+        <g fill="none" stroke="#65758b" strokeWidth="1" opacity=".55"><path d="M148 119 L160 133 L172 119 M126 137 L150 151 L160 179 L170 151 L194 137 M138 204 L160 214 L182 204 M132 235 L160 243 L188 235 M137 266 L145 283 L137 331 M183 266 L175 283 L183 331" /><path d="M147 66 Q160 60 173 66 M144 80 Q160 86 176 80" /></g><path className="aura-heart" d="M160 154 L166 162 L160 171 L154 162Z" />
+      </svg><span className="aura-stage-caption">{stage ? `AURA ${streak.aura.name.toLocaleUpperCase('fr')}` : 'LA DISCIPLINE ÉVEILLE L’AURA'}</span>
+    </div>
+  </Card>
+}

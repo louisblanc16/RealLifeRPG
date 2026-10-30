@@ -1,0 +1,22 @@
+[package]
+name = "real-life-rpg"
+version = "1.0.0"
+description = "REAL LIFE RPG — progression sportive personnelle, entièrement locale"
+edition = "2021"
+rust-version = "1.90"
+
+[lib]
+name = "real_life_rpg_lib"
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "=2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.5", features = [] }
+tauri-plugin-dialog = "=2.8.3"
+serde_json = "1"
+tempfile = "3"
+
+[profile.release]
+strip = true

@@ -1,0 +1,8 @@
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import type { Records } from '../../domain/models'
+
+export default function WeightChart({ measurements, unit = 'kg', name = 'Poids' }: { measurements: Records['measurements'][]; unit?: string; name?: string }) {
+  const points = [...measurements].sort((a, b) => new Date(a.measuredAt).getTime() - new Date(b.measuredAt).getTime()).map(row => ({ timestamp: new Date(row.measuredAt).getTime(), weight: row.value }))
+  const dateLabel = (value: number) => new Date(value).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+  return <div className="chart-container" role="img" aria-label={`${name}, ${points.length} mesures en ${unit}`}><ResponsiveContainer width="100%" height="100%"><LineChart data={points} margin={{ top: 18, right: 22, bottom: 8, left: 0 }}><CartesianGrid stroke="var(--chart-grid)" strokeDasharray="3 6" vertical={false} /><XAxis dataKey="timestamp" type="number" domain={['dataMin', 'dataMax']} tickFormatter={dateLabel} stroke="var(--chart-tick)" tickLine={false} axisLine={false} fontSize={11} minTickGap={40} /><YAxis domain={['auto', 'auto']} stroke="var(--chart-tick)" tickLine={false} axisLine={false} fontSize={11} width={45} /><Tooltip labelFormatter={value => dateLabel(Number(value))} formatter={value => [`${value} ${unit}`, name]} contentStyle={{ background: 'var(--surface-raised)', border: '1px solid var(--border)', borderRadius: 10, color: 'var(--text)' }} /><Line type="monotone" dataKey="weight" stroke="var(--purple)" strokeWidth={2} dot={{ r: 3, fill: 'var(--purple)', strokeWidth: 0 }} activeDot={{ r: 5 }} isAnimationActive={false} /></LineChart></ResponsiveContainer></div>
+}

@@ -1,0 +1,187 @@
+name: macOS — DMG
+
+on:
+  workflow_dispatch:
+    inputs:
+      prepare_release:
+        description: Préparer une Release BROUILLON avec les deux DMG (jamais publiée automatiquement)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+# Évite deux créations simultanées de brouillons pour une même version.
+concurrency:
+  group: macos-distribution
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: DMG — ${{ matrix.architecture }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: apple-silicon
+            runner: macos-15
+            target: aarch64-apple-darwin
+            binary_arch: arm64
+          - architecture: intel
+            runner: macos-15-intel
+            target: x86_64-apple-darwin
+            binary_arch: x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Vérifier la configuration de production et les fichiers versionnés
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, existsSync, appendFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const read = path => JSON.parse(readFileSync(path, 'utf8'));
+          const pkg = read('package.json');
+          const config = read('src-tauri/tauri.conf.json');
+          const mac = read('src-tauri/tauri.macos.conf.json');
+          const cargo = readFileSync('src-tauri/Cargo.toml', 'utf8');
+          assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+          assert.equal(config.version, pkg.version);
+          assert.equal(cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1], pkg.version);
+          assert.equal(config.identifier, 'com.realliferpg.app');
+          assert.equal(config.productName, 'REAL LIFE RPG');
+          assert.equal(config.app.windows[0].label, 'main');
+          assert.equal(config.app.windows[0].useHttpsScheme, true);
+          assert.equal(config.app.windows[0].incognito, false);
+          assert.equal(mac.bundle.macOS.signingIdentity, '-');
+          for (const icon of config.bundle.icon) assert.ok(existsSync(`src-tauri/${icon}`), icon);
+          const tracked = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0').filter(Boolean);
+          for (const path of tracked) {
+            assert.ok(!/(^|\/)(node_modules|target|backups|sauvegardes)\//i.test(path), `Dossier privé ou généré versionné : ${path}`);
+            assert.ok(!/(^|\/)\.env($|\.(?!example$))|\.(pfx|p12|p8|key|pem|mobileprovision|provisionprofile)$/i.test(path), `Secret potentiel versionné : ${path}`);
+            if (path.endsWith('.json')) assert.notEqual(read(path).app, 'REAL_LIFE_RPG', `Sauvegarde personnelle versionnée : ${path}`);
+          }
+          appendFileSync(process.env.GITHUB_ENV, `APP_VERSION=${pkg.version}\n`);
+          NODE
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+          key: macos-${{ matrix.target }}
+
+      - run: npm ci
+
+      # CLI issue du package-lock existant ; aucune configuration de développement.
+      # La signature ad hoc est définie uniquement dans tauri.macos.conf.json.
+      - name: Compiler et créer le DMG
+        uses: tauri-apps/tauri-action@v1
+        with:
+          tauriScript: npm run tauri
+          args: --target ${{ matrix.target }} --bundles dmg --ci -- --locked
+          uploadUpdaterJson: false
+          uploadUpdaterSignatures: false
+
+      - name: Vérifier le bundle et préparer le téléchargement
+        env:
+          TARGET: ${{ matrix.target }}
+          ARCHITECTURE: ${{ matrix.architecture }}
+          BINARY_ARCH: ${{ matrix.binary_arch }}
+        run: |
+          app="src-tauri/target/$TARGET/release/bundle/macos/REAL LIFE RPG.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.realliferpg.app'
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$APP_VERSION"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+          test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$BINARY_ARCH"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          node --input-type=module <<'NODE'
+          import { readdirSync, mkdirSync, copyFileSync } from 'node:fs';
+          import assert from 'node:assert/strict';
+          const source = `src-tauri/target/${process.env.TARGET}/release/bundle/dmg`;
+          const files = readdirSync(source).filter(file => file.endsWith('.dmg'));
+          assert.equal(files.length, 1, 'Un seul DMG attendu par architecture');
+          mkdirSync('artifacts', { recursive: true });
+          copyFileSync(`${source}/${files[0]}`, `artifacts/REAL-LIFE-RPG_${process.env.APP_VERSION}_macos_${process.env.ARCHITECTURE}.dmg`);
+          NODE
+          git diff --exit-code -- package-lock.json src-tauri/Cargo.lock
+
+      - name: Conserver le DMG pendant 30 jours
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: macos-${{ matrix.architecture }}
+          path: artifacts/*.dmg
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
+
+  draft-release:
+    name: Préparer une Release brouillon
+    if: ${{ inputs.prepare_release }}
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: macos-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Créer uniquement un nouveau brouillon, sans modifier de Release existante
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync, readdirSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          import assert from 'node:assert/strict';
+          const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
+          assert.match(version, /^\d+\.\d+\.\d+$/);
+          const tag = `v${version}`;
+          const files = ['apple-silicon', 'intel'].map(arch => `REAL-LIFE-RPG_${version}_macos_${arch}.dmg`);
+          assert.deepEqual(readdirSync('artifacts').sort(), [...files].sort());
+          const api = `${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}`;
+          const headers = { Authorization: `Bearer ${process.env.GH_TOKEN}`, Accept: 'application/vnd.github+json' };
+          // Lister aussi les brouillons : ils peuvent ne pas encore avoir de tag Git.
+          for (let page = 1; ; page++) {
+            const response = await fetch(`${api}/releases?per_page=100&page=${page}`, { headers });
+            assert.equal(response.status, 200, 'Impossible de vérifier les Releases existantes');
+            const releases = await response.json();
+            assert.ok(!releases.some(release => release.tag_name === tag), `Une Release ${tag} existe déjà, publiée ou brouillon. Aucun remplacement autorisé.`);
+            if (releases.length < 100) break;
+          }
+          const response = await fetch(`${api}/git/ref/tags/${tag}`, { headers });
+          assert.equal(response.status, 404, `Le tag ${tag} existe déjà ou sa vérification a échoué. Aucun remplacement autorisé.`);
+          const notes = `Build macOS ${version} — commit ${process.env.GITHUB_SHA}.\n\nApple Silicon : apple-silicon.dmg ; Intel : intel.dmg. macOS 13.3 minimum.\nSignature ad hoc uniquement, sans Developer ID ni notarisation Apple : Gatekeeper peut bloquer l'ouverture.\n\nÀ tester sur Mac avant publication : lancement hors ligne, export/import, fermeture/réouverture et conservation des données après remplacement de l'application.\nLa publication de ce brouillon reste une action manuelle.`;
+          execFileSync('gh', ['release', 'create', tag, ...files.map(file => `artifacts/${file}`),
+            '--repo', process.env.GITHUB_REPOSITORY, '--draft', '--target', process.env.GITHUB_SHA,
+            '--title', `REAL LIFE RPG ${version} — macOS`, '--notes', notes], { stdio: 'inherit' });
+          NODE
