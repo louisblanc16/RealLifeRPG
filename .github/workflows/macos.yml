@@ -94,7 +94,8 @@ jobs:
         uses: tauri-apps/tauri-action@v1
         with:
           tauriScript: npm run tauri
-          args: --target ${{ matrix.target }} --bundles dmg --ci -- --locked
+          # Conserver le .app : Tauri le supprime si seul le DMG est demandé.
+          args: --target ${{ matrix.target }} --bundles app,dmg --ci -- --locked
           uploadUpdaterJson: false
           uploadUpdaterSignatures: false
 
@@ -104,12 +105,17 @@ jobs:
           ARCHITECTURE: ${{ matrix.architecture }}
           BINARY_ARCH: ${{ matrix.binary_arch }}
         run: |
-          app="src-tauri/target/$TARGET/release/bundle/macos/REAL LIFE RPG.app"
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.realliferpg.app'
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$APP_VERSION"
-          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
-          test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$BINARY_ARCH"
-          codesign --verify --deep --strict --verbose=2 "$app"
+          verify_app() {
+            local app="$1"
+            local executable
+            test -f "$app/Contents/Info.plist"
+            test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Contents/Info.plist")" = 'com.realliferpg.app'
+            test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$APP_VERSION"
+            executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Contents/Info.plist")
+            test "$(lipo -archs "$app/Contents/MacOS/$executable")" = "$BINARY_ARCH"
+            codesign --verify --deep --strict --verbose=2 "$app"
+          }
+          verify_app "src-tauri/target/$TARGET/release/bundle/macos/REAL LIFE RPG.app"
           node --input-type=module <<'NODE'
           import { readdirSync, mkdirSync, copyFileSync } from 'node:fs';
           import assert from 'node:assert/strict';
@@ -119,6 +125,16 @@ jobs:
           mkdirSync('artifacts', { recursive: true });
           copyFileSync(`${source}/${files[0]}`, `artifacts/REAL-LIFE-RPG_${process.env.APP_VERSION}_macos_${process.env.ARCHITECTURE}.dmg`);
           NODE
+          dmg="artifacts/REAL-LIFE-RPG_${APP_VERSION}_macos_${ARCHITECTURE}.dmg"
+          hdiutil verify "$dmg"
+          mountpoint="$RUNNER_TEMP/realliferpg-dmg-$ARCHITECTURE"
+          mkdir -p "$mountpoint"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mountpoint"
+          trap 'hdiutil detach "$mountpoint"' EXIT
+          verify_app "$mountpoint/REAL LIFE RPG.app"
+          hdiutil detach "$mountpoint"
+          trap - EXIT
+          shasum -a 256 "$dmg"
           git diff --exit-code -- package-lock.json src-tauri/Cargo.lock
 
       - name: Conserver le DMG pendant 30 jours
@@ -165,7 +181,7 @@ jobs:
           import assert from 'node:assert/strict';
           const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
           assert.match(version, /^\d+\.\d+\.\d+$/);
-          const tag = `v${version}`;
+          const tag = `v${version}-macos`;
           const files = ['apple-silicon', 'intel'].map(arch => `REAL-LIFE-RPG_${version}_macos_${arch}.dmg`);
           assert.deepEqual(readdirSync('artifacts').sort(), [...files].sort());
           const api = `${process.env.GITHUB_API_URL}/repos/${process.env.GITHUB_REPOSITORY}`;
